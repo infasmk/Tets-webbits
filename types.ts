@@ -27,6 +27,7 @@ export interface Notification {
   buttonLink?: string;
   createdAt: string;
   active: boolean;
+  syncStatus?: 'cloud' | 'local';
 }
 
 export interface Stats {

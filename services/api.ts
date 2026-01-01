@@ -1,3 +1,4 @@
+
 import { supabase, isSupabaseConfigured } from '../supabaseClient';
 import { Post, Stats, Notification } from '../types';
 
@@ -33,6 +34,37 @@ const saveLocalNotif = (notif: Notification) => {
   localStorage.setItem(NOTIF_STORAGE_KEY, JSON.stringify(notifs));
 };
 
+/**
+ * Robust helper to stringify database or network errors
+ * Prevents [object Object] by checking specific fields and using JSON fallback
+ */
+const stringifyError = (err: any): string => {
+  if (!err) return "Unknown error occurred";
+  if (typeof err === 'string') return err;
+  
+  // Specifically handle Supabase/PostgREST error objects
+  const parts = [];
+  if (err.message && typeof err.message === 'string') parts.push(err.message);
+  if (err.details && typeof err.details === 'string') parts.push(err.details);
+  if (err.hint && typeof err.hint === 'string') parts.push(`Hint: ${err.hint}`);
+  if (err.code) parts.push(`[Error Code: ${err.code}]`);
+  
+  if (parts.length > 0) return parts.join(' | ');
+
+  // Handle standard Error objects
+  if (err instanceof Error) return err.message;
+  
+  // Last resort: Deep JSON check
+  try {
+    const json = JSON.stringify(err);
+    if (json !== '{}' && json !== '[]') return json;
+  } catch (e) {
+    // Fail silently
+  }
+  
+  return String(err);
+};
+
 // Helper to map DB snake_case to App camelCase
 const mapPost = (dbPost: any): Post => ({
   id: dbPost.id,
@@ -58,7 +90,7 @@ export const fetchPosts = async (): Promise<Post[]> => {
         .select('*')
         .order('created_at', { ascending: false });
       if (!error && data) dbPosts = data.map(mapPost);
-    } catch (e) { console.warn("Supabase fetch failed, using local fallback"); }
+    } catch (e) { console.warn("Supabase fetch failed"); }
   }
   
   const localPosts = getLocalPosts();
@@ -81,20 +113,21 @@ export const fetchPostById = async (id: string): Promise<Post | undefined> => {
 };
 
 export const incrementPostViews = async (id: string, currentViews: number): Promise<void> => {
+  if (isSupabaseConfigured() && supabase && !id.toString().startsWith('local-')) {
+    try {
+      const { error } = await supabase.rpc('increment_views', { post_id: id });
+      if (error) throw error;
+      return;
+    } catch {
+      await supabase.from('posts').update({ views: (currentViews || 0) + 1 }).eq('id', id);
+    }
+  }
+  
   const localPosts = getLocalPosts();
   const localIdx = localPosts.findIndex(p => p.id === id);
   if (localIdx >= 0) {
     localPosts[localIdx].views = (localPosts[localIdx].views || 0) + 1;
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(localPosts));
-  }
-
-  if (isSupabaseConfigured() && supabase && !id.toString().startsWith('local-')) {
-    try {
-      const { error } = await supabase.rpc('increment_views', { post_id: id });
-      if (error) throw error;
-    } catch {
-      await supabase.from('posts').update({ views: (currentViews || 0) + 1 }).eq('id', id);
-    }
   }
 };
 
@@ -103,39 +136,117 @@ export const fetchNotifications = async (onlyActive: boolean = true): Promise<No
     if (isSupabaseConfigured() && supabase) {
       try {
         let query = supabase.from('notifications').select('*');
-        if (onlyActive) {
-            query = query.eq('active', true);
-        }
-        const { data, error } = await query.order('created_at', { ascending: false });
+        if (onlyActive) query = query.eq('active', true);
         
-        if (!error && data) dbNotifs = data.map(n => ({
+        const { data, error } = await query.order('created_at', { ascending: false });
+        if (error) throw error;
+        
+        if (data) dbNotifs = data.map(n => ({
             id: n.id,
             message: n.message,
             type: n.type,
-            buttonText: n.button_text || n.buttonText,
-            buttonLink: n.button_link || n.buttonLink,
+            buttonText: n.button_text,
+            buttonLink: n.button_link,
             active: n.active,
-            createdAt: n.created_at || n.createdAt,
-            syncStatus: 'cloud' // Mark as global
+            createdAt: n.created_at,
+            syncStatus: 'cloud'
         }));
       } catch (err) {
           console.error("Cloud fetch failed", err);
       }
     }
     
-    // Merge with local ones but tag them
-    const local = getLocalNotifs().map(n => ({ ...n, syncStatus: 'local' }));
-    
-    // Filter out duplicates (if any local was a fallback of a cloud one)
+    // Merge local for demo/dev
+    const local = getLocalNotifs().map(n => ({ ...n, syncStatus: 'local' })) as any[];
     const merged = [...dbNotifs];
     local.forEach(ln => {
-        if (!merged.find(mn => mn.id === ln.id)) {
-            merged.push(ln as any);
-        }
+        if (!merged.find(mn => mn.id === ln.id)) merged.push(ln);
     });
 
     const filtered = onlyActive ? merged.filter(n => n.active) : merged;
     return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+};
+
+export const saveNotification = async (notifData: Omit<Notification, 'id' | 'createdAt' | 'active'>): Promise<Notification> => {
+    const fullPayload = {
+        message: notifData.message,
+        type: notifData.type,
+        button_text: notifData.buttonText || null,
+        button_link: notifData.buttonLink || null,
+        active: true
+    };
+    
+    if (isSupabaseConfigured() && supabase) {
+        // Attempt insert with full payload
+        let { data, error } = await supabase.from('notifications').insert([fullPayload]).select();
+        
+        // Handle missing column error (PGRST204) by falling back to simplified schema
+        if (error && error.code === 'PGRST204') {
+            console.warn("Table schema mismatch detected (missing button_link/text). Falling back to basic broadcast.");
+            const basicPayload = {
+                message: notifData.message,
+                type: notifData.type,
+                active: true
+            };
+            const retry = await supabase.from('notifications').insert([basicPayload]).select();
+            data = retry.data;
+            error = retry.error;
+        }
+
+        if (error) {
+            const readableError = stringifyError(error);
+            console.error(`Broadcast sync failure: ${readableError}`, error);
+            throw new Error(readableError);
+        }
+        
+        if (data && data[0]) {
+            return {
+                id: data[0].id,
+                message: data[0].message,
+                type: data[0].type,
+                buttonText: data[0].button_text,
+                buttonLink: data[0].button_link,
+                active: data[0].active,
+                createdAt: data[0].created_at,
+                syncStatus: 'cloud'
+            } as any;
+        }
+    }
+
+    // Local-only persistence if no Cloud connection
+    const newNotif: Notification = { 
+        ...notifData, 
+        id: `local-${Date.now()}`,
+        active: true,
+        createdAt: new Date().toISOString(),
+        syncStatus: 'local'
+    } as any;
+    saveLocalNotif(newNotif);
+    return newNotif;
+};
+
+export const deactivateNotification = async (id: string): Promise<void> => {
+    if (isSupabaseConfigured() && supabase && !id.toString().startsWith('local-')) {
+        const { error } = await supabase.from('notifications').update({ active: false }).eq('id', id);
+        if (error) throw new Error(stringifyError(error));
+        return;
+    }
+    
+    const notifs = getLocalNotifs();
+    const idx = notifs.findIndex(n => n.id === id);
+    if (idx >= 0) {
+        notifs[idx].active = false;
+        localStorage.setItem(NOTIF_STORAGE_KEY, JSON.stringify(notifs));
+    }
+};
+
+export const deleteNotification = async (id: string): Promise<void> => {
+    if (isSupabaseConfigured() && supabase && !id.toString().startsWith('local-')) {
+      const { error } = await supabase.from('notifications').delete().eq('id', id);
+      if (error) throw new Error(stringifyError(error));
+    }
+    const filtered = getLocalNotifs().filter(n => n.id !== id);
+    localStorage.setItem(NOTIF_STORAGE_KEY, JSON.stringify(filtered));
 };
 
 export const createPost = async (postData: Omit<Post, 'id' | 'createdAt' | 'views'>): Promise<Post> => {
@@ -147,20 +258,18 @@ export const createPost = async (postData: Omit<Post, 'id' | 'createdAt' | 'view
     image_url: postData.imageUrl,
     tags: postData.tags,
     download_url: postData.downloadUrl || null,
+    // FIXED: Changed postData.button_text to postData.buttonText to align with the Post type definition
     button_text: postData.buttonText || null,
     button_link: postData.buttonLink || null,
     views: 0,
   };
 
   if (isSupabaseConfigured() && supabase) {
-    try {
       const { data, error } = await supabase.from('posts').insert([sanitized]).select();
-      if (!error && data) return mapPost(data[0]);
-      if (error) throw error;
-    } catch (err) {
-      console.error("Supabase creation failed:", err);
-      throw err;
-    }
+      if (error) {
+          throw new Error(stringifyError(error));
+      }
+      if (data) return mapPost(data[0]);
   }
 
   const newPost: Post = {
@@ -169,7 +278,6 @@ export const createPost = async (postData: Omit<Post, 'id' | 'createdAt' | 'view
     views: 0,
     createdAt: new Date().toISOString()
   } as Post;
-  
   saveLocalPost(newPost);
   return newPost;
 };
@@ -187,14 +295,11 @@ export const updatePost = async (id: string, updates: Partial<Post>): Promise<Po
         if (updates.hasOwnProperty('buttonText')) dbUpdates.button_text = updates.buttonText;
         if (updates.hasOwnProperty('buttonLink')) dbUpdates.button_link = updates.buttonLink;
 
-        try {
-          const { data, error } = await supabase.from('posts').update(dbUpdates).eq('id', id).select();
-          if (error) throw error;
-          if (data) return mapPost(data[0]);
-        } catch (e) {
-            console.error("Update failed", e);
-            throw e;
+        const { data, error } = await supabase.from('posts').update(dbUpdates).eq('id', id).select();
+        if (error) {
+            throw new Error(stringifyError(error));
         }
+        if (data) return mapPost(data[0]);
     }
 
     const posts = getLocalPosts();
@@ -209,7 +314,8 @@ export const updatePost = async (id: string, updates: Partial<Post>): Promise<Po
 
 export const deletePost = async (id: string): Promise<void> => {
     if (isSupabaseConfigured() && supabase && !id.toString().startsWith('local-')) {
-      try { await supabase.from('posts').delete().eq('id', id); } catch {}
+      const { error } = await supabase.from('posts').delete().eq('id', id);
+      if (error) throw new Error(stringifyError(error));
     }
     const posts = getLocalPosts().filter(p => p.id !== id);
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(posts));
@@ -222,72 +328,6 @@ export const fetchStats = async (): Promise<Stats> => {
     totalViews: posts.reduce((acc, curr) => acc + (Number(curr.views) || 0), 0),
     storageUsedMB: parseFloat((posts.length * 0.4 + 1.2).toFixed(1)),
   };
-};
-
-export const saveNotification = async (notifData: Omit<Notification, 'id' | 'createdAt' | 'active'>): Promise<Notification> => {
-    const dbNotif = {
-        message: notifData.message,
-        type: notifData.type,
-        button_text: notifData.buttonText || null,
-        button_link: notifData.buttonLink || null,
-        active: true
-    };
-    
-    if (isSupabaseConfigured() && supabase) {
-      try {
-        const { data, error } = await supabase.from('notifications').insert([dbNotif]).select();
-        if (error) throw error;
-        if (data) return {
-            id: data[0].id,
-            message: data[0].message,
-            type: data[0].type,
-            buttonText: data[0].button_text,
-            buttonLink: data[0].button_link,
-            active: data[0].active,
-            createdAt: data[0].created_at || data[0].createdAt,
-            syncStatus: 'cloud'
-        } as any;
-      } catch (err) {
-          console.error("Cloud notification broadcast failed", err);
-          throw new Error("Broadcast failed to sync with Cloud Database. It will only be visible on this device.");
-      }
-    }
-
-    const newNotif: Notification = { 
-        ...notifData, 
-        id: `notif-${Date.now()}`,
-        active: true,
-        createdAt: new Date().toISOString(),
-        syncStatus: 'local'
-    } as any;
-    saveLocalNotif(newNotif);
-    return newNotif;
-};
-
-export const deactivateNotification = async (id: string): Promise<void> => {
-    if (isSupabaseConfigured() && supabase && !id.toString().startsWith('notif-')) {
-        try {
-            const { error } = await supabase.from('notifications').update({ active: false }).eq('id', id);
-            if (error) throw error;
-        } catch (e) {
-            console.error("Cloud deactivation failed", e);
-            throw new Error("Failed to end global broadcast");
-        }
-    }
-    const notifs = getLocalNotifs();
-    const idx = notifs.findIndex(n => n.id === id);
-    if (idx >= 0) {
-        notifs[idx].active = false;
-        localStorage.setItem(NOTIF_STORAGE_KEY, JSON.stringify(notifs));
-    }
-};
-
-export const deleteNotification = async (id: string): Promise<void> => {
-    if (isSupabaseConfigured() && supabase && !id.toString().startsWith('notif-')) {
-      try { await supabase.from('notifications').delete().eq('id', id); } catch {}
-    }
-    const filtered = getLocalNotifs().filter(n => n.id !== id);
-    localStorage.setItem(NOTIF_STORAGE_KEY, JSON.stringify(filtered));
 };
 
 export const uploadImage = async (file: File): Promise<string> => {
