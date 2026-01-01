@@ -115,12 +115,25 @@ export const fetchNotifications = async (onlyActive: boolean = true): Promise<No
             buttonText: n.button_text || n.buttonText,
             buttonLink: n.button_link || n.buttonLink,
             active: n.active,
-            createdAt: n.created_at || n.createdAt
+            createdAt: n.created_at || n.createdAt,
+            syncStatus: 'cloud' // Mark as global
         }));
-      } catch {}
+      } catch (err) {
+          console.error("Cloud fetch failed", err);
+      }
     }
-    const local = getLocalNotifs();
-    const merged = [...local, ...dbNotifs];
+    
+    // Merge with local ones but tag them
+    const local = getLocalNotifs().map(n => ({ ...n, syncStatus: 'local' }));
+    
+    // Filter out duplicates (if any local was a fallback of a cloud one)
+    const merged = [...dbNotifs];
+    local.forEach(ln => {
+        if (!merged.find(mn => mn.id === ln.id)) {
+            merged.push(ln as any);
+        }
+    });
+
     const filtered = onlyActive ? merged.filter(n => n.active) : merged;
     return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 };
@@ -223,24 +236,30 @@ export const saveNotification = async (notifData: Omit<Notification, 'id' | 'cre
     if (isSupabaseConfigured() && supabase) {
       try {
         const { data, error } = await supabase.from('notifications').insert([dbNotif]).select();
-        if (!error && data) return {
+        if (error) throw error;
+        if (data) return {
             id: data[0].id,
             message: data[0].message,
             type: data[0].type,
             buttonText: data[0].button_text,
             buttonLink: data[0].button_link,
             active: data[0].active,
-            createdAt: data[0].created_at || data[0].createdAt
-        };
-      } catch {}
+            createdAt: data[0].created_at || data[0].createdAt,
+            syncStatus: 'cloud'
+        } as any;
+      } catch (err) {
+          console.error("Cloud notification broadcast failed", err);
+          throw new Error("Broadcast failed to sync with Cloud Database. It will only be visible on this device.");
+      }
     }
 
     const newNotif: Notification = { 
         ...notifData, 
         id: `notif-${Date.now()}`,
         active: true,
-        createdAt: new Date().toISOString()
-    };
+        createdAt: new Date().toISOString(),
+        syncStatus: 'local'
+    } as any;
     saveLocalNotif(newNotif);
     return newNotif;
 };
@@ -248,9 +267,11 @@ export const saveNotification = async (notifData: Omit<Notification, 'id' | 'cre
 export const deactivateNotification = async (id: string): Promise<void> => {
     if (isSupabaseConfigured() && supabase && !id.toString().startsWith('notif-')) {
         try {
-            await supabase.from('notifications').update({ active: false }).eq('id', id);
+            const { error } = await supabase.from('notifications').update({ active: false }).eq('id', id);
+            if (error) throw error;
         } catch (e) {
-            console.error("Deactivation failed", e);
+            console.error("Cloud deactivation failed", e);
+            throw new Error("Failed to end global broadcast");
         }
     }
     const notifs = getLocalNotifs();

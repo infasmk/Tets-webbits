@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { fetchStats, fetchNotifications, saveNotification, deleteNotification, deactivateNotification } from '../../services/api';
 import { Stats, Notification } from '../../types';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { FileText, Eye, Database, Bell, Plus, Trash2, Info, CheckCircle, AlertTriangle, TrendingUp, Link as LinkIcon, Power, Loader2 } from 'lucide-react';
+import { FileText, Eye, Database, Bell, Plus, Trash2, Info, CheckCircle, AlertTriangle, TrendingUp, Link as LinkIcon, Power, Loader2, Globe, WifiOff } from 'lucide-react';
+import { isSupabaseConfigured } from '../../supabaseClient';
 
 const safeString = (val: any, fallback: string = ''): string => {
   if (val === null || val === undefined) return fallback;
@@ -52,8 +53,10 @@ const Dashboard: React.FC = () => {
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [cloudStatus, setCloudStatus] = useState<'online' | 'offline'>('offline');
 
   useEffect(() => {
+    setCloudStatus(isSupabaseConfigured() ? 'online' : 'offline');
     loadData();
   }, []);
 
@@ -89,15 +92,15 @@ const Dashboard: React.FC = () => {
         setNotifBtnText('');
         setNotifBtnLink('');
         await loadData(); // Refresh list
-    } catch (err) {
-        alert("Failed to send notification");
+    } catch (err: any) {
+        alert(err.message || "Failed to broadcast notification.");
     } finally {
         setSending(false);
     }
   };
 
   const handleEndNotif = async (id: string) => {
-      if (!confirm("End this broadcast? It will no longer be visible on the public site.")) return;
+      if (!confirm("End this broadcast? It will no longer be visible on any device.")) return;
       setProcessingId(id);
       try {
           await deactivateNotification(id);
@@ -105,8 +108,8 @@ const Dashboard: React.FC = () => {
           setNotifications(prev => prev.map(n => n.id === id ? { ...n, active: false } : n));
           // Then refresh full data in background
           await loadData();
-      } catch (err) {
-          alert("Failed to deactivate broadcast");
+      } catch (err: any) {
+          alert(err.message || "Failed to deactivate broadcast");
       } finally {
           setProcessingId(null);
       }
@@ -150,8 +153,16 @@ const Dashboard: React.FC = () => {
     <div className="space-y-10">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-slate-800 pb-8">
         <div>
-            <h1 className="text-4xl font-black text-white tracking-tighter italic">OVERVIEW</h1>
-            <p className="text-slate-400 font-medium">Real-time performance metrics for Web Bits.</p>
+            <h1 className="text-4xl font-black text-white tracking-tighter italic uppercase">OVERVIEW</h1>
+            <div className="flex items-center gap-3 mt-2">
+                <p className="text-slate-400 font-medium">Real-time performance metrics for Web Bits.</p>
+                <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border ${
+                    cloudStatus === 'online' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-red-500/10 text-red-400 border-red-500/20'
+                }`}>
+                    {cloudStatus === 'online' ? <Globe className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+                    {cloudStatus === 'online' ? 'Global Cloud: SYNCED' : 'Global Cloud: OFFLINE'}
+                </div>
+            </div>
         </div>
         <div className="flex gap-4">
             <Link 
@@ -200,7 +211,7 @@ const Dashboard: React.FC = () => {
 
           <div className="bg-brand-surface p-8 rounded-[2rem] border border-slate-800 shadow-2xl">
               <h3 className="text-xl font-black text-white mb-8 flex items-center gap-3">
-                  <Bell className="w-6 h-6 text-brand-accent" /> SYSTEM ALERT
+                  <Bell className="w-6 h-6 text-brand-accent" /> GLOBAL BROADCAST
               </h3>
               <form onSubmit={handleSendNotification} className="space-y-6">
                   <div>
@@ -228,7 +239,7 @@ const Dashboard: React.FC = () => {
                         value={newNotifMsg}
                         onChange={e => setNewNotifMsg(e.target.value)}
                         className="w-full bg-brand-dark border border-slate-700 rounded-2xl p-4 text-white focus:border-brand-accent outline-none text-sm h-24 resize-none" 
-                        placeholder="What's the update?" 
+                        placeholder="Push an update to all connected clients..." 
                         required
                       />
                   </div>
@@ -257,7 +268,7 @@ const Dashboard: React.FC = () => {
                     disabled={sending}
                     className="w-full bg-brand-accent text-brand-darker font-black py-4 rounded-2xl hover:bg-brand-accentHover transition-all disabled:opacity-50 mt-4 shadow-xl shadow-brand-accent/10"
                   >
-                      {sending ? 'COMMITTING...' : 'PUSH BROADCAST'}
+                      {sending ? 'COMMITTING...' : 'PUSH GLOBAL BROADCAST'}
                   </button>
               </form>
           </div>
@@ -265,7 +276,7 @@ const Dashboard: React.FC = () => {
 
       <div className="bg-brand-surface p-8 rounded-[2.5rem] border border-slate-800 shadow-2xl">
           <div className="flex justify-between items-center mb-8">
-              <h3 className="text-xl font-black text-white italic">LIVE AUDIT LOG</h3>
+              <h3 className="text-xl font-black text-white italic uppercase">LIVE AUDIT LOG</h3>
               <span className="bg-slate-800 px-4 py-1 rounded-full text-[10px] font-black text-slate-400 uppercase tracking-widest">{notifications.length} EVENTS RECORDED</span>
           </div>
           <div className="space-y-4">
@@ -281,6 +292,12 @@ const Dashboard: React.FC = () => {
                                   <p className="text-slate-100 text-sm font-bold truncate max-w-[200px] md:max-w-md">{safeString(n.message)}</p>
                                   <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border ${n.active ? 'bg-brand-accent/10 text-brand-accent border-brand-accent/20' : 'bg-slate-800 text-slate-500 border-slate-700'}`}>
                                       {n.active ? 'ACTIVE' : 'ENDED'}
+                                  </span>
+                                  <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded flex items-center gap-1 border ${
+                                      (n as any).syncStatus === 'cloud' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                                  }`}>
+                                      {(n as any).syncStatus === 'cloud' ? <Globe className="w-2.5 h-2.5" /> : <WifiOff className="w-2.5 h-2.5" />}
+                                      {(n as any).syncStatus === 'cloud' ? 'GLOBAL' : 'LOCAL ONLY'}
                                   </span>
                               </div>
                               <div className="flex flex-wrap gap-3 mt-1.5">
