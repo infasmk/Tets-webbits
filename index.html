@@ -12,11 +12,11 @@
           extend: {
             colors: {
               brand: {
-                dark: '#0f172a', // slate-900
-                darker: '#020617', // slate-950
-                accent: '#22d3ee', // cyan-400
-                accentHover: '#06b6d4', // cyan-500
-                surface: '#1e293b', // slate-800
+                dark: '#0f172a',
+                darker: '#020617',
+                accent: '#22d3ee',
+                accentHover: '#06b6d4',
+                surface: '#1e293b',
               }
             },
             fontFamily: {
@@ -35,41 +35,34 @@
         font-family: 'Inter', sans-serif;
         background-color: #020617;
         color: #f8fafc;
+        margin: 0;
       }
-      /* Custom Scrollbar */
-      ::-webkit-scrollbar {
-        width: 8px;
-      }
-      ::-webkit-scrollbar-track {
-        background: #0f172a; 
-      }
-      ::-webkit-scrollbar-thumb {
-        background: #334155; 
-        border-radius: 4px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: #475569; 
-      }
+      ::-webkit-scrollbar { width: 8px; }
+      ::-webkit-scrollbar-track { background: #0f172a; }
+      ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+      ::-webkit-scrollbar-thumb:hover { background: #475569; }
     </style>
   <script type="importmap">
 {
   "imports": {
-    "react-router-dom": "https://esm.sh/react-router-dom@^7.1.0",
-    "framer-motion": "https://esm.sh/framer-motion@^11.15.0",
-    "react/": "https://esm.sh/react@^19.0.0/",
-    "react": "https://esm.sh/react@^19.0.0",
-    "react-dom/": "https://esm.sh/react-dom@^19.0.0/",
-    "lucide-react": "https://esm.sh/lucide-react@^0.468.0",
-    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.47.10",
-    "react-markdown": "https://esm.sh/react-markdown@^9.0.1",
-    "recharts": "https://esm.sh/recharts@2.15.0",
     "vite": "https://esm.sh/vite@^7.3.0",
-    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2",
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "@supabase/supabase-js": "https://esm.sh/@supabase/supabase-js@^2.89.0",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "recharts": "https://esm.sh/recharts@^3.6.0",
+    "framer-motion": "https://esm.sh/framer-motion@^12.23.26",
+    "lucide-react": "https://esm.sh/lucide-react@^0.562.0",
+    "react-markdown": "https://esm.sh/react-markdown@^10.1.0",
+    "react-router-dom": "https://esm.sh/react-router-dom@^7.11.0"
   }
 }
 </script>
 </head>
   <body>
     <div id="root"></div>
+    <!-- CRITICAL: Entry point script for Vite/Vercel -->
+    <script type="module" src="/index.tsx"></script>
   </body>
 </html>
