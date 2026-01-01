@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Using the provided Supabase credentials
-const supabaseUrl = 'https://fbyainbqdpwvhwoariaq.supabase.co';
-const supabaseAnonKey = 'sb_publishable_EMIdTK5ICYqqEbQPP4qlCA_XRb9g9Hu';
+// Using the provided new Supabase credentials
+const supabaseUrl = 'https://xgizjcgaviuomqieqtdc.supabase.co';
+const supabaseAnonKey = 'sb_publishable_2Hkf-hl2p3LPDfwoZQkD5A_7wG8MPrE';
 
 export const isSupabaseConfigured = () => {
     return !!supabaseUrl && !!supabaseAnonKey;

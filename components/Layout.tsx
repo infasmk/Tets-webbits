@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, X, Zap, User, Bell, Globe, Shield } from 'lucide-react';
+import { Menu, X, Zap, User, Bell, Globe, Shield, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase, isSupabaseConfigured } from '../supabaseClient';
 import { fetchNotifications } from '../services/api';
@@ -12,6 +12,33 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [activeNotif, setActiveNotif] = useState<Notification | null>(null);
   const location = useLocation();
+
+  const getSafeStr = (val: any, fallback: string = ''): string => {
+    if (val === null || val === undefined) return fallback;
+    if (typeof val === 'object') {
+      const check = val.message || val.text || val.title || val.name || val.value || val.rendered;
+      if (check !== undefined && check !== null) {
+        if (typeof check === 'string') return check === '[object Object]' ? fallback : check;
+        if (typeof check === 'number') return String(check);
+        try { return JSON.stringify(check); } catch { return fallback; }
+      }
+      try {
+        const s = JSON.stringify(val);
+        return (s === '{}' || s === '[]') ? fallback : s;
+      } catch { return fallback; }
+    }
+    const res = String(val);
+    return res === '[object Object]' ? fallback : res;
+  };
+
+  const ensureAbsoluteUrl = (url: string) => {
+    if (!url) return '';
+    const trimmed = url.trim();
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://') || trimmed.startsWith('mailto:') || trimmed.startsWith('tel:') || trimmed.startsWith('#')) {
+      return trimmed;
+    }
+    return `https://${trimmed}`;
+  };
 
   useEffect(() => {
     const handleScroll = () => {
@@ -32,7 +59,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     };
     const getNotifs = async () => {
         const notifs = await fetchNotifications();
-        if (notifs.length > 0) setActiveNotif(notifs[0]);
+        if (notifs.length > 0) {
+            // Show latest active notification
+            setActiveNotif(notifs[0]);
+        }
     };
     checkAuth();
     getNotifs();
@@ -45,35 +75,73 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
   return (
     <div className="min-h-screen bg-brand-darker text-slate-100 font-sans selection:bg-brand-accent selection:text-brand-darker flex flex-col">
-      {/* Dynamic Notification Banner */}
+      
+      {/* Pop-up Notification System */}
       <AnimatePresence>
-          {activeNotif && location.pathname === '/' && (
+          {activeNotif && (
               <motion.div 
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                className={`w-full py-3 px-4 text-center text-sm font-bold flex items-center justify-center gap-3 relative z-[60] border-b border-white/10 ${
-                    activeNotif.type === 'warning' ? 'bg-amber-500 text-brand-darker' :
-                    activeNotif.type === 'success' ? 'bg-brand-accent text-brand-darker' :
-                    'bg-slate-800 text-white'
-                }`}
+                initial={{ opacity: 0, y: 100, scale: 0.9, x: 20 }}
+                animate={{ opacity: 1, y: 0, scale: 1, x: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                className="fixed bottom-6 right-6 z-[100] w-[calc(100%-3rem)] sm:w-[400px]"
               >
-                  <Bell className="w-4 h-4 animate-bounce" />
-                  <span className="uppercase tracking-widest">{activeNotif.message}</span>
-                  <button onClick={() => setActiveNotif(null)} className="absolute right-4 hover:scale-125 transition-transform">
-                      <X className="w-4 h-4" />
-                  </button>
+                  <div className={`relative overflow-hidden p-6 rounded-[2rem] border shadow-2xl backdrop-blur-2xl ${
+                      activeNotif.type === 'warning' ? 'bg-amber-500/10 border-amber-500/30' :
+                      activeNotif.type === 'success' ? 'bg-brand-accent/10 border-brand-accent/30' :
+                      'bg-slate-800/80 border-slate-700/50'
+                  }`}>
+                      <button 
+                        onClick={() => setActiveNotif(null)} 
+                        className="absolute top-4 right-4 p-2 text-slate-500 hover:text-white transition-colors"
+                      >
+                          <X className="w-5 h-5" />
+                      </button>
+
+                      <div className="flex gap-4">
+                          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 shadow-lg ${
+                            activeNotif.type === 'warning' ? 'bg-amber-500 text-brand-darker' :
+                            activeNotif.type === 'success' ? 'bg-brand-accent text-brand-darker' :
+                            'bg-slate-700 text-brand-accent'
+                          }`}>
+                              <Bell className="w-6 h-6 animate-pulse" />
+                          </div>
+                          <div className="flex-1 pr-6">
+                              <h4 className="text-white font-black text-xs uppercase tracking-[0.2em] mb-2">System Message</h4>
+                              <p className="text-slate-300 text-sm font-medium leading-relaxed break-words">
+                                  {getSafeStr(activeNotif.message)}
+                              </p>
+                              
+                              {activeNotif.buttonText && activeNotif.buttonLink && (
+                                  <div className="mt-5">
+                                      <a 
+                                        href={ensureAbsoluteUrl(activeNotif.buttonLink)}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className={`inline-flex items-center gap-2 px-6 py-2.5 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 shadow-lg ${
+                                            activeNotif.type === 'warning' ? 'bg-amber-500 text-brand-darker hover:bg-amber-400' :
+                                            activeNotif.type === 'success' ? 'bg-brand-accent text-brand-darker hover:bg-brand-accentHover' :
+                                            'bg-white text-brand-darker hover:bg-slate-200'
+                                        }`}
+                                      >
+                                          {getSafeStr(activeNotif.buttonText)}
+                                          <ExternalLink className="w-3.5 h-3.5" />
+                                      </a>
+                                  </div>
+                              )}
+                          </div>
+                      </div>
+                  </div>
               </motion.div>
           )}
       </AnimatePresence>
 
       {/* Navbar */}
       <nav
-        className={`fixed w-full z-50 transition-all duration-300 border-b ${
+        className={`fixed w-full z-50 transition-all duration-300 border-b top-0 ${
           isScrolled
             ? 'bg-brand-dark/90 backdrop-blur-md border-slate-800 py-3'
             : 'bg-transparent border-transparent py-5'
-        } ${activeNotif && location.pathname === '/' ? 'top-[40px]' : 'top-0'}`}
+        }`}
       >
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center">
@@ -89,7 +157,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               </span>
             </Link>
 
-            {/* Desktop Nav */}
             <div className="hidden md:flex items-center gap-10">
               <Link to="/" className="text-slate-400 hover:text-white transition-colors text-[10px] font-black uppercase tracking-widest">
                 START
@@ -103,7 +170,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
               </Link>
             </div>
 
-            {/* Mobile Menu Button */}
             <button
               onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
               className="md:hidden text-slate-300 hover:text-brand-accent transition-colors"
@@ -113,7 +179,6 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           </div>
         </div>
 
-        {/* Mobile Nav */}
         <AnimatePresence>
           {isMobileMenuOpen && (
             <motion.div
@@ -133,12 +198,10 @@ const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
         </AnimatePresence>
       </nav>
 
-      {/* Main Content */}
-      <main className={`flex-grow relative z-0 ${activeNotif && location.pathname === '/' ? 'pt-10' : ''}`}>
+      <main className="flex-grow relative z-0">
          {children}
       </main>
 
-      {/* Footer */}
       <footer className="bg-brand-dark border-t border-slate-800 py-20 relative z-10">
         <div className="max-w-7xl mx-auto px-4 grid md:grid-cols-4 gap-12">
           <div className="md:col-span-2">

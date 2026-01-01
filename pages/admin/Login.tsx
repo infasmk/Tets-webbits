@@ -35,9 +35,12 @@ const Login: React.FC = () => {
         if (typeof err === 'string') {
             message = err;
         } else if (err && typeof err === 'object') {
-            message = err.message || err.error_description || JSON.stringify(err);
+            // Priority: .message -> .error_description -> .error -> stringify
+            message = err.message || err.error_description || err.error || JSON.stringify(err);
         }
-        setError(String(message));
+        // Final guard against [object Object]
+        const finalMsg = String(message);
+        setError(finalMsg === '[object Object]' ? 'Authentication failed. Please check your credentials.' : finalMsg);
     } finally {
         setLoading(false);
     }

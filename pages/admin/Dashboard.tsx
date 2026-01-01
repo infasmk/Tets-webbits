@@ -3,14 +3,14 @@ import { Link } from 'react-router-dom';
 import { fetchStats, fetchNotifications, saveNotification, deleteNotification } from '../../services/api';
 import { Stats, Notification } from '../../types';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { FileText, Eye, Database, Bell, Plus, Trash2, Info, CheckCircle, AlertTriangle, TrendingUp } from 'lucide-react';
+import { FileText, Eye, Database, Bell, Plus, Trash2, Info, CheckCircle, AlertTriangle, TrendingUp, Link as LinkIcon } from 'lucide-react';
 
 const safeString = (val: any, fallback: string = ''): string => {
   if (val === null || val === undefined) return fallback;
   if (typeof val === 'string') return val;
   if (typeof val === 'number') return val.toLocaleString();
   if (typeof val === 'object') {
-    const check = val.name || val.title || val.value || val.count || val.total || val.message;
+    const check = val.message || val.name || val.title || val.rendered || val.value || val.count || val.total;
     if (check !== undefined && check !== null && typeof check !== 'object') return String(check);
     try { 
       const json = JSON.stringify(val);
@@ -47,6 +47,8 @@ const Dashboard: React.FC = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [newNotifMsg, setNewNotifMsg] = useState('');
   const [notifType, setNotifType] = useState<Notification['type']>('info');
+  const [notifBtnText, setNotifBtnText] = useState('');
+  const [notifBtnLink, setNotifBtnLink] = useState('');
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -78,9 +80,13 @@ const Dashboard: React.FC = () => {
     try {
         await saveNotification({
             message: newNotifMsg,
-            type: notifType
+            type: notifType,
+            buttonText: notifBtnText || undefined,
+            buttonLink: notifBtnLink || undefined
         });
         setNewNotifMsg('');
+        setNotifBtnText('');
+        setNotifBtnLink('');
         loadData();
     } catch (err) {
         alert("Failed to send notification");
@@ -177,19 +183,58 @@ const Dashboard: React.FC = () => {
               </h3>
               <form onSubmit={handleSendNotification} className="space-y-6">
                   <div>
+                      <label className="block text-slate-500 text-[10px] font-black tracking-widest uppercase mb-3">Priority Level</label>
+                      <div className="flex gap-2">
+                          {['info', 'success', 'warning'].map(type => (
+                              <button 
+                                key={type}
+                                type="button"
+                                onClick={() => setNotifType(type as any)}
+                                className={`flex-1 py-2 px-3 rounded-lg text-[10px] font-black uppercase tracking-widest border transition-all ${
+                                    notifType === type 
+                                    ? 'bg-brand-accent text-brand-darker border-brand-accent' 
+                                    : 'bg-brand-dark text-slate-500 border-slate-700 hover:border-slate-500'
+                                }`}
+                              >
+                                  {type}
+                              </button>
+                          ))}
+                      </div>
+                  </div>
+                  <div>
                       <label className="block text-slate-500 text-[10px] font-black tracking-widest uppercase mb-3">Broadcast Message</label>
                       <textarea 
                         value={newNotifMsg}
                         onChange={e => setNewNotifMsg(e.target.value)}
-                        className="w-full bg-brand-dark border border-slate-700 rounded-2xl p-4 text-white focus:border-brand-accent outline-none text-sm h-32 resize-none" 
+                        className="w-full bg-brand-dark border border-slate-700 rounded-2xl p-4 text-white focus:border-brand-accent outline-none text-sm h-24 resize-none" 
                         placeholder="What's the update?" 
                         required
+                      />
+                  </div>
+                  <div className="space-y-4 pt-4 border-t border-slate-800">
+                      <div className="flex items-center gap-2 mb-2">
+                          <LinkIcon className="w-3.5 h-3.5 text-brand-accent" />
+                          <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Optional Action Button</h4>
+                      </div>
+                      <input 
+                        type="text"
+                        value={notifBtnText}
+                        onChange={e => setNotifBtnText(e.target.value)}
+                        className="w-full bg-brand-dark border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-brand-accent outline-none text-xs" 
+                        placeholder="Button Text (e.g. View Project)" 
+                      />
+                      <input 
+                        type="text"
+                        value={notifBtnLink}
+                        onChange={e => setNotifBtnLink(e.target.value)}
+                        className="w-full bg-brand-dark border border-slate-700 rounded-xl px-4 py-3 text-white focus:border-brand-accent outline-none text-xs" 
+                        placeholder="Button Link (URL)" 
                       />
                   </div>
                   <button 
                     type="submit" 
                     disabled={sending}
-                    className="w-full bg-brand-accent text-brand-darker font-black py-4 rounded-2xl hover:bg-brand-accentHover transition-all disabled:opacity-50"
+                    className="w-full bg-brand-accent text-brand-darker font-black py-4 rounded-2xl hover:bg-brand-accentHover transition-all disabled:opacity-50 mt-4 shadow-xl shadow-brand-accent/10"
                   >
                       {sending ? 'COMMITTING...' : 'PUSH BROADCAST'}
                   </button>
@@ -211,6 +256,11 @@ const Dashboard: React.FC = () => {
                           </div>
                           <div>
                               <p className="text-slate-100 text-sm font-bold">{safeString(n.message)}</p>
+                              {n.buttonText && (
+                                  <span className="inline-block mt-2 text-[8px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded border border-slate-700 font-black uppercase tracking-tighter">
+                                      CTA: {safeString(n.buttonText)}
+                                  </span>
+                              )}
                               <p className="text-[10px] font-black text-slate-600 uppercase mt-1">{n.createdAt ? new Date(n.createdAt).toLocaleDateString() : 'N/A'}</p>
                           </div>
                       </div>

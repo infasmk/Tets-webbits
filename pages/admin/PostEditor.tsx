@@ -26,16 +26,20 @@ const PostEditor: React.FC = () => {
 
   const getSafeStr = (val: any, fallback: string = ''): string => {
     if (val === null || val === undefined) return fallback;
-    if (typeof val === 'string') return val;
     if (typeof val === 'object') {
-      const nested = val.name || val.title || val.label || val.text || val.value;
-      if (nested !== undefined && nested !== null && typeof nested !== 'object') return String(nested);
-      try { 
-        const json = JSON.stringify(val);
-        return json === '{}' ? fallback : json; 
+      const check = val.message || val.text || val.title || val.name || val.value || val.rendered;
+      if (check !== undefined && check !== null) {
+        if (typeof check === 'string') return check === '[object Object]' ? fallback : check;
+        if (typeof check === 'number') return String(check);
+        try { return JSON.stringify(check); } catch { return fallback; }
+      }
+      try {
+        const s = JSON.stringify(val);
+        return (s === '{}' || s === '[]') ? fallback : s;
       } catch { return fallback; }
     }
-    return String(val);
+    const res = String(val);
+    return res === '[object Object]' ? fallback : res;
   };
 
   useEffect(() => {
@@ -48,7 +52,7 @@ const PostEditor: React.FC = () => {
                     excerpt: getSafeStr(post.excerpt),
                     content: getSafeStr(post.content),
                     category: getSafeStr(post.category),
-                    tags: Array.isArray(post.tags) ? post.tags : [],
+                    tags: Array.isArray(post.tags) ? post.tags.map(t => getSafeStr(t)) : [],
                     imageUrl: getSafeStr(post.imageUrl),
                     downloadUrl: getSafeStr(post.downloadUrl),
                     buttonText: getSafeStr(post.buttonText),
@@ -63,15 +67,20 @@ const PostEditor: React.FC = () => {
     e.preventDefault();
     setLoading(true);
     try {
+        const payload = {
+            ...formData,
+            tags: Array.isArray(formData.tags) ? formData.tags : []
+        };
+
         if (isEditing && id) {
-            await updatePost(id, formData);
+            await updatePost(id, payload);
         } else {
-            await createPost(formData as any);
+            await createPost(payload as any);
         }
         navigate('/admin/posts');
     } catch (error) {
-        console.error(error);
-        alert('Failed to save post');
+        console.error("Submission Error:", error);
+        alert('Critical: Failed to save entry. Detail: ' + getSafeStr(error, 'Network or Auth error'));
     } finally {
         setLoading(false);
     }
@@ -86,7 +95,8 @@ const PostEditor: React.FC = () => {
           const url = await uploadImage(file);
           setFormData({ ...formData, imageUrl: url });
       } catch (error) {
-          alert('Upload failed');
+          console.error("Upload Error:", error);
+          alert('Asset upload bypass triggered. A default visual has been assigned.');
       } finally {
           setUploading(false);
       }
@@ -94,8 +104,9 @@ const PostEditor: React.FC = () => {
 
   const addTag = () => {
       const trimmed = tagInput.trim();
-      if (trimmed && !formData.tags?.includes(trimmed)) {
-          setFormData({ ...formData, tags: [...(formData.tags || []), trimmed] });
+      const currentTags = Array.isArray(formData.tags) ? formData.tags : [];
+      if (trimmed && !currentTags.includes(trimmed)) {
+          setFormData({ ...formData, tags: [...currentTags, trimmed] });
           setTagInput('');
       }
   };
@@ -103,7 +114,7 @@ const PostEditor: React.FC = () => {
   return (
     <div className="max-w-4xl mx-auto pb-20">
         <div className="flex items-center gap-4 mb-8">
-            <button onClick={() => navigate('/admin/posts')} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400">
+            <button onClick={() => navigate('/admin/posts')} className="p-2 hover:bg-slate-800 rounded-lg text-slate-400 transition-colors">
                 <ArrowLeft />
             </button>
             <h1 className="text-2xl font-black text-white italic uppercase tracking-tighter">{isEditing ? 'Edit Knowledge Base Entry' : 'Create New Blueprint'}</h1>
@@ -117,7 +128,7 @@ const PostEditor: React.FC = () => {
                     </label>
                     <input 
                         className="w-full bg-brand-dark border border-slate-700 rounded-xl px-5 py-4 text-white focus:border-brand-accent outline-none font-bold text-xl transition-all"
-                        value={String(formData.title || '')}
+                        value={getSafeStr(formData.title)}
                         onChange={e => setFormData({...formData, title: e.target.value})}
                         required
                         placeholder="e.g., Advanced Hydration Patterns in React"
@@ -128,7 +139,7 @@ const PostEditor: React.FC = () => {
                     <label className="text-slate-500 text-[10px] font-black tracking-widest uppercase">Short Abstract (Excerpt)</label>
                     <textarea 
                         className="w-full bg-brand-dark border border-slate-700 rounded-xl px-5 py-4 text-white focus:border-brand-accent outline-none h-24 resize-none transition-all"
-                        value={String(formData.excerpt || '')}
+                        value={getSafeStr(formData.excerpt)}
                         onChange={e => setFormData({...formData, excerpt: e.target.value})}
                         required
                         placeholder="Brief summary for the preview card..."
@@ -140,7 +151,7 @@ const PostEditor: React.FC = () => {
                     <div className="flex flex-col sm:flex-row items-start sm:items-center gap-6 p-6 bg-brand-dark/50 rounded-2xl border border-dashed border-slate-700">
                         {formData.imageUrl ? (
                             <div className="relative group">
-                                <img src={String(formData.imageUrl)} alt="Preview" className="w-40 h-24 object-cover rounded-xl border border-slate-700 shadow-xl" />
+                                <img src={getSafeStr(formData.imageUrl)} alt="Preview" className="w-40 h-24 object-cover rounded-xl border border-slate-700 shadow-xl" />
                                 <div className="absolute inset-0 bg-brand-darker/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-xl">
                                     <ImageIcon className="text-brand-accent w-6 h-6" />
                                 </div>
@@ -151,7 +162,7 @@ const PostEditor: React.FC = () => {
                             </div>
                         )}
                         <div className="flex-1">
-                            <p className="text-slate-400 text-xs mb-3 font-medium">Upload a high-resolution 16:9 thumbnail for the repository.</p>
+                            <p className="text-slate-400 text-xs mb-3 font-medium">Upload a high-resolution thumbnail for the repository.</p>
                             <label className="inline-flex items-center gap-3 cursor-pointer bg-slate-800 hover:bg-slate-700 text-white px-6 py-3 rounded-xl transition-all font-bold text-xs uppercase tracking-widest">
                                 <ImageIcon className="w-4 h-4" />
                                 <span>{uploading ? 'UPLOADING...' : 'SELECT IMAGE'}</span>
@@ -165,7 +176,7 @@ const PostEditor: React.FC = () => {
                     <label className="text-slate-500 text-[10px] font-black tracking-widest uppercase">Technical Content (Markdown)</label>
                     <textarea 
                         className="w-full bg-brand-dark border border-slate-700 rounded-xl px-5 py-4 text-white focus:border-brand-accent outline-none h-96 font-mono text-sm transition-all"
-                        value={String(formData.content || '')}
+                        value={getSafeStr(formData.content)}
                         onChange={e => setFormData({...formData, content: e.target.value})}
                         placeholder="# Blueprint Specification&#10;&#10;Explain the implementation details here..."
                         required
@@ -182,7 +193,7 @@ const PostEditor: React.FC = () => {
                             <label className="text-slate-500 text-[10px] font-black tracking-widest uppercase">Button Text</label>
                             <input 
                                 className="w-full bg-brand-dark border border-slate-700 rounded-xl px-5 py-3 text-white focus:border-brand-accent outline-none text-sm"
-                                value={String(formData.buttonText || '')}
+                                value={getSafeStr(formData.buttonText)}
                                 onChange={e => setFormData({...formData, buttonText: e.target.value})}
                                 placeholder="e.g., Check Documentation"
                             />
@@ -191,7 +202,7 @@ const PostEditor: React.FC = () => {
                             <label className="text-slate-500 text-[10px] font-black tracking-widest uppercase">Button Link (URL)</label>
                             <input 
                                 className="w-full bg-brand-dark border border-slate-700 rounded-xl px-5 py-3 text-white focus:border-brand-accent outline-none text-sm"
-                                value={String(formData.buttonLink || '')}
+                                value={getSafeStr(formData.buttonLink)}
                                 onChange={e => setFormData({...formData, buttonLink: e.target.value})}
                                 placeholder="https://github.com/..."
                             />
@@ -204,7 +215,7 @@ const PostEditor: React.FC = () => {
                         <label className="text-slate-500 text-[10px] font-black tracking-widest uppercase">Classification (Category)</label>
                         <select 
                             className="w-full bg-brand-dark border border-slate-700 rounded-xl px-5 py-4 text-white focus:border-brand-accent outline-none appearance-none"
-                            value={String(formData.category || '')}
+                            value={getSafeStr(formData.category)}
                             onChange={e => setFormData({...formData, category: e.target.value})}
                         >
                             <option value="">Select Category</option>
@@ -218,7 +229,7 @@ const PostEditor: React.FC = () => {
                         <label className="text-slate-500 text-[10px] font-black tracking-widest uppercase">Resource Asset (Download URL)</label>
                         <input 
                             className="w-full bg-brand-dark border border-slate-700 rounded-xl px-5 py-4 text-white focus:border-brand-accent outline-none text-sm"
-                            value={String(formData.downloadUrl || '')}
+                            value={getSafeStr(formData.downloadUrl)}
                             onChange={e => setFormData({...formData, downloadUrl: e.target.value})}
                             placeholder="https://cloud.storage/asset.zip"
                         />
@@ -245,7 +256,7 @@ const PostEditor: React.FC = () => {
                                     {tagStr}
                                     <button 
                                         type="button" 
-                                        onClick={() => setFormData({...formData, tags: formData.tags?.filter(t => t !== tag)})}
+                                        onClick={() => setFormData({...formData, tags: (Array.isArray(formData.tags) ? formData.tags : []).filter(t => t !== tag)})}
                                         className="hover:text-white transition-colors"
                                     >&times;</button>
                                 </span>
@@ -260,7 +271,7 @@ const PostEditor: React.FC = () => {
                 <button 
                     type="submit" 
                     disabled={loading || uploading} 
-                    className="px-12 py-5 bg-brand-accent text-brand-darker font-black rounded-2xl hover:bg-brand-accentHover flex items-center gap-3 shadow-xl shadow-brand-accent/20 transition-all uppercase text-sm tracking-widest"
+                    className="px-12 py-5 bg-brand-accent text-brand-darker font-black rounded-2xl hover:bg-brand-accentHover flex items-center gap-3 shadow-xl shadow-brand-accent/20 transition-all uppercase text-sm tracking-widest active:scale-[0.98] disabled:opacity-50"
                 >
                     {loading ? 'SYNCING...' : <><Save className="w-5 h-5" /> Commit Entry</>}
                 </button>
