@@ -98,15 +98,16 @@ export const incrementPostViews = async (id: string, currentViews: number): Prom
   }
 };
 
-export const fetchNotifications = async (): Promise<Notification[]> => {
+export const fetchNotifications = async (onlyActive: boolean = true): Promise<Notification[]> => {
     let dbNotifs: Notification[] = [];
     if (isSupabaseConfigured() && supabase) {
       try {
-        const { data, error } = await supabase
-            .from('notifications')
-            .select('*')
-            .eq('active', true)
-            .order('created_at', { ascending: false });
+        let query = supabase.from('notifications').select('*');
+        if (onlyActive) {
+            query = query.eq('active', true);
+        }
+        const { data, error } = await query.order('created_at', { ascending: false });
+        
         if (!error && data) dbNotifs = data.map(n => ({
             id: n.id,
             message: n.message,
@@ -119,7 +120,9 @@ export const fetchNotifications = async (): Promise<Notification[]> => {
       } catch {}
     }
     const local = getLocalNotifs();
-    return [...local, ...dbNotifs].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    const merged = [...local, ...dbNotifs];
+    const filtered = onlyActive ? merged.filter(n => n.active) : merged;
+    return filtered.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 };
 
 export const createPost = async (postData: Omit<Post, 'id' | 'createdAt' | 'views'>): Promise<Post> => {
@@ -240,6 +243,22 @@ export const saveNotification = async (notifData: Omit<Notification, 'id' | 'cre
     };
     saveLocalNotif(newNotif);
     return newNotif;
+};
+
+export const deactivateNotification = async (id: string): Promise<void> => {
+    if (isSupabaseConfigured() && supabase && !id.toString().startsWith('notif-')) {
+        try {
+            await supabase.from('notifications').update({ active: false }).eq('id', id);
+        } catch (e) {
+            console.error("Deactivation failed", e);
+        }
+    }
+    const notifs = getLocalNotifs();
+    const idx = notifs.findIndex(n => n.id === id);
+    if (idx >= 0) {
+        notifs[idx].active = false;
+        localStorage.setItem(NOTIF_STORAGE_KEY, JSON.stringify(notifs));
+    }
 };
 
 export const deleteNotification = async (id: string): Promise<void> => {

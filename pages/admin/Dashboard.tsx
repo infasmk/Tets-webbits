@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { fetchStats, fetchNotifications, saveNotification, deleteNotification } from '../../services/api';
+import { fetchStats, fetchNotifications, saveNotification, deleteNotification, deactivateNotification } from '../../services/api';
 import { Stats, Notification } from '../../types';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
-import { FileText, Eye, Database, Bell, Plus, Trash2, Info, CheckCircle, AlertTriangle, TrendingUp, Link as LinkIcon } from 'lucide-react';
+import { FileText, Eye, Database, Bell, Plus, Trash2, Info, CheckCircle, AlertTriangle, TrendingUp, Link as LinkIcon, Power, Loader2 } from 'lucide-react';
 
 const safeString = (val: any, fallback: string = ''): string => {
   if (val === null || val === undefined) return fallback;
@@ -51,6 +51,7 @@ const Dashboard: React.FC = () => {
   const [notifBtnLink, setNotifBtnLink] = useState('');
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [processingId, setProcessingId] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -61,7 +62,7 @@ const Dashboard: React.FC = () => {
     try {
         const [statsData, notifsData] = await Promise.all([
             fetchStats(),
-            fetchNotifications()
+            fetchNotifications(false) // Fetch ALL (active and inactive)
         ]);
         setStats(statsData);
         setNotifications(notifsData);
@@ -87,7 +88,7 @@ const Dashboard: React.FC = () => {
         setNewNotifMsg('');
         setNotifBtnText('');
         setNotifBtnLink('');
-        loadData();
+        await loadData(); // Refresh list
     } catch (err) {
         alert("Failed to send notification");
     } finally {
@@ -95,12 +96,32 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const handleEndNotif = async (id: string) => {
+      if (!confirm("End this broadcast? It will no longer be visible on the public site.")) return;
+      setProcessingId(id);
+      try {
+          await deactivateNotification(id);
+          // Directly update the local state for immediate feedback
+          setNotifications(prev => prev.map(n => n.id === id ? { ...n, active: false } : n));
+          // Then refresh full data in background
+          await loadData();
+      } catch (err) {
+          alert("Failed to deactivate broadcast");
+      } finally {
+          setProcessingId(null);
+      }
+  };
+
   const handleDeleteNotif = async (id: string) => {
+      if (!confirm("Permanently delete this log entry?")) return;
+      setProcessingId(id);
       try {
           await deleteNotification(id);
           setNotifications(prev => prev.filter(n => n.id !== id));
       } catch (err) {
-          alert("Failed to delete");
+          alert("Failed to delete record");
+      } finally {
+          setProcessingId(null);
       }
   };
 
@@ -118,7 +139,7 @@ const Dashboard: React.FC = () => {
     { name: 'Sun', views: 750 },
   ];
 
-  if (loading || !stats) return (
+  if (loading && !stats) return (
     <div className="flex flex-col items-center justify-center min-h-[400px] gap-4">
         <div className="w-12 h-12 border-4 border-brand-accent border-t-transparent rounded-full animate-spin"></div>
         <p className="text-slate-500 font-bold animate-pulse uppercase tracking-widest text-xs">Syncing Core Systems...</p>
@@ -143,9 +164,9 @@ const Dashboard: React.FC = () => {
       </div>
 
       <div className="grid md:grid-cols-3 gap-8">
-        <StatCard icon={FileText} label="TOTAL ARTICLES" value={stats.totalPosts} color="bg-blue-500" trend="+2 this week" />
-        <StatCard icon={Eye} label="AGGREGATE VIEWS" value={stats.totalViews} color="bg-emerald-500" trend="+12.4%" />
-        <StatCard icon={Database} label="STORAGE USED" value={stats.storageUsedMB} suffix=" MB" color="bg-purple-500" />
+        <StatCard icon={FileText} label="TOTAL ARTICLES" value={stats?.totalPosts || 0} color="bg-blue-500" trend="+2 this week" />
+        <StatCard icon={Eye} label="AGGREGATE VIEWS" value={stats?.totalViews || 0} color="bg-emerald-500" trend="+12.4%" />
+        <StatCard icon={Database} label="STORAGE USED" value={stats?.storageUsedMB || 0} suffix=" MB" color="bg-purple-500" />
       </div>
 
       <div className="grid lg:grid-cols-3 gap-8">
@@ -249,29 +270,56 @@ const Dashboard: React.FC = () => {
           </div>
           <div className="space-y-4">
               {notifications.map(n => (
-                  <div key={n.id} className="flex items-center justify-between p-5 bg-brand-dark/40 rounded-2xl border border-slate-800 hover:border-slate-700/50 transition-all group">
+                  <div key={n.id} className={`flex flex-col sm:flex-row sm:items-center justify-between p-5 rounded-2xl border transition-all group gap-4 ${n.active ? 'bg-brand-dark/40 border-slate-800 hover:border-slate-700/50' : 'bg-brand-darker/50 border-slate-900 opacity-60'}`}>
                       <div className="flex items-center gap-4">
-                          <div className="p-3 bg-slate-900 rounded-xl border border-slate-800">
+                          <div className="p-3 bg-slate-900 rounded-xl border border-slate-800 relative">
                               {getNotifIcon(n.type)}
+                              {n.active && <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-brand-accent rounded-full border-2 border-slate-900 animate-pulse"></span>}
                           </div>
-                          <div>
-                              <p className="text-slate-100 text-sm font-bold">{safeString(n.message)}</p>
-                              {n.buttonText && (
-                                  <span className="inline-block mt-2 text-[8px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded border border-slate-700 font-black uppercase tracking-tighter">
-                                      CTA: {safeString(n.buttonText)}
+                          <div className="flex-1 min-w-0">
+                              <div className="flex flex-wrap items-center gap-3">
+                                  <p className="text-slate-100 text-sm font-bold truncate max-w-[200px] md:max-w-md">{safeString(n.message)}</p>
+                                  <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded border ${n.active ? 'bg-brand-accent/10 text-brand-accent border-brand-accent/20' : 'bg-slate-800 text-slate-500 border-slate-700'}`}>
+                                      {n.active ? 'ACTIVE' : 'ENDED'}
                                   </span>
-                              )}
-                              <p className="text-[10px] font-black text-slate-600 uppercase mt-1">{n.createdAt ? new Date(n.createdAt).toLocaleDateString() : 'N/A'}</p>
+                              </div>
+                              <div className="flex flex-wrap gap-3 mt-1.5">
+                                  <p className="text-[10px] font-black text-slate-600 uppercase">{n.createdAt ? new Date(n.createdAt).toLocaleDateString() : 'N/A'}</p>
+                                  {n.buttonText && (
+                                      <span className="text-[8px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded border border-slate-700 font-black uppercase tracking-tighter">
+                                          CTA: {safeString(n.buttonText)}
+                                      </span>
+                                  )}
+                              </div>
                           </div>
                       </div>
-                      <button 
-                        onClick={() => handleDeleteNotif(n.id)}
-                        className="p-3 text-slate-600 hover:text-red-400 transition-all opacity-0 group-hover:opacity-100"
-                      >
-                          <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center gap-2 justify-end sm:justify-start">
+                        {n.active && (
+                            <button 
+                                onClick={() => handleEndNotif(n.id)}
+                                disabled={processingId === n.id}
+                                className="p-3 text-slate-500 hover:text-amber-400 transition-all flex items-center gap-2 text-[10px] font-black uppercase tracking-widest disabled:opacity-50"
+                            >
+                                {processingId === n.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Power className="w-4 h-4" />}
+                                <span className="hidden md:inline">End Broadcast</span>
+                            </button>
+                        )}
+                        <button 
+                            onClick={() => handleDeleteNotif(n.id)}
+                            disabled={processingId === n.id}
+                            className="p-3 text-slate-600 hover:text-red-400 transition-all disabled:opacity-50"
+                        >
+                            {processingId === n.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                        </button>
+                      </div>
                   </div>
               ))}
+
+              {notifications.length === 0 && !loading && (
+                  <div className="text-center py-12 text-slate-600 font-bold italic">
+                      No broadcast history found.
+                  </div>
+              )}
           </div>
       </div>
     </div>
