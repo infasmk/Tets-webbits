@@ -119,7 +119,7 @@ const Home: React.FC = () => {
           >
             THE <br />
             <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-accent via-white to-brand-accent animate-pulse-slow">
-              BLUEPRINT
+              Code Verse
             </span>
           </motion.h1>
 
@@ -129,8 +129,9 @@ const Home: React.FC = () => {
             transition={{ delay: 0.4 }}
             className="text-base md:text-2xl lg:text-3xl text-slate-400 mb-14 max-w-4xl mx-auto leading-relaxed font-light px-6 italic"
           >
-            Next-gen architectural patterns and production-ready code blocks for modern web engineers.
-          </motion.p>
+            Welcome to CodeVerse  By Web ⚡  Bits 
+A world of clean, reusable source code.  
+Explore. Learn. Build smarter.  </motion.p>
 
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
@@ -142,7 +143,7 @@ const Home: React.FC = () => {
               to="/posts" 
               className="group relative px-12 py-6 md:px-20 md:py-8 bg-brand-accent text-brand-darker font-black rounded-2xl hover:bg-white transition-all duration-500 flex items-center justify-center gap-4 text-xl md:text-2xl shadow-[0_0_50px_rgba(34,211,238,0.3)] hover:shadow-[0_0_60px_rgba(255,255,255,0.4)] active:scale-95 overflow-hidden"
             >
-              <span className="relative z-10">INITIALIZE ACCESS</span>
+              <span className="relative z-10">All Source Code</span>
               <ArrowRight className="relative z-10 w-6 h-6 md:w-8 md:h-8 group-hover:translate-x-2 transition-transform" />
             </Link>
           </motion.div>
@@ -166,9 +167,9 @@ const Home: React.FC = () => {
                     >
                         Syncing Records
                     </motion.div>
-                    <h2 className="text-6xl md:text-9xl font-black text-white mb-6 italic tracking-tighter uppercase leading-[0.85]">SYSTEM <br /><span className="text-slate-800">UPDATES</span></h2>
+                    <h2 className="text-6xl md:text-9xl font-black text-white mb-6 italic tracking-tighter uppercase leading-[0.85]">SYSTEM<br /><span className="text-slate-800">UPDATES</span></h2>
                     <p className="text-slate-400 text-xl md:text-2xl border-l-2 border-brand-accent/30 pl-8 max-w-2xl leading-relaxed italic">
-                      Fresh drops from the engineering core.
+                      Fresh drops from the Web ⚡ Bits core.
                     </p>
                 </div>
             </div>
@@ -241,7 +242,7 @@ const Home: React.FC = () => {
 
             <div className="mt-24 text-center">
                 <Link to="/posts" className="inline-flex items-center gap-4 px-12 py-5 border border-slate-800 rounded-2xl text-slate-500 font-black uppercase tracking-widest text-xs hover:border-brand-accent hover:text-white transition-all active:scale-95 group">
-                    DECRYPT FULL REPOSITORY <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                    OPEN FULL REPOSITORY <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                 </Link>
             </div>
         </div>
